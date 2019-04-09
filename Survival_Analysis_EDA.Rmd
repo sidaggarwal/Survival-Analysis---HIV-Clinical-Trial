@@ -1,0 +1,65 @@
+---
+title: "Survival Analysis Project, Math 150"
+author: "Siddhartha Aggarwal"
+date: "4/8/2019"
+output:
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message=FALSE, warning=FALSE, fig.height=3, fig.width=5,
+fig.align = "center")
+library(tidyverse)
+library(broom)
+library(dplyr)
+library(ggplot2)
+library(oilabs)
+library(readr)
+
+AIDSdata <- read_csv("~/AIDSdata.csv")
+
+
+
+```
+
+
+After uploading the data, the first visualization I wanted to create was to see how many individuals are part of each treatment group out of the 4 we have outlined. This would be interesting to get a sense of the variety of treatments in the study. The graph below shows that only Treatments 1 and 2 are administered in the study. This is odd, since not a single participant got treatments 3 or 4.
+
+```{r}
+tbl <- with(AIDSdata, table(txgrp))
+
+barplot(tbl)
+
+
+```
+
+
+
+The next visualization I made was to plot the CD4 stratum at screening against the event indicator for AIDS defining diagnosis or death (censor variable). This was to get a sense of whether CD4 stratum levels in any way had a strong correlation with the censor variable.
+
+
+```{r}
+
+ggplot(AIDSdata, aes(x=jitter(strat2), y=jitter(censor))) + geom_point()
+
+```
+
+
+I made a few other visualizations but didn't really feel like they were useful enought to include. 
+
+
+* * *
+
+
+
+
+
+
+
+
+
+
+
+
+
+
