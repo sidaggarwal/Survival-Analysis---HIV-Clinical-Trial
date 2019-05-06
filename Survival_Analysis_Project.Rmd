@@ -1,9 +1,14 @@
 ---
-title: "Survival Analysis Project, Math 150"
+title: "A Survival Model to asses a Three Drug Regimen vs a Two Drug Regimen in HIV infected patients" 
 author: "Siddhartha Aggarwal"
-date: "4/21/2019"
+date: "5/5/2019"
+header-includes: \usepackage{graphicx}
 output:
+  html_document:
+      latex_engine: xelatex
+      df_print: paged
   pdf_document: default
+always_allow_html: yes
 ---
 
 ```{r setup, include=FALSE}
@@ -15,49 +20,217 @@ library(dplyr)
 library(ggplot2)
 library(oilabs)
 library(readr)
+library(tidylog)
+library(survival)
+library(survminer)
+library(plotly)
 AIDSdata <- read.csv(url( "http://pages.pomona.edu/~jsh04747/courses/math150/AIDSdata.csv"))
 ```
 
+## Introduction
 
-After uploading the data, the first visualization I wanted to create was to see how many individuals are part of each treatment group out of the 4 we have outlined. This would be interesting to get a sense of the variety of treatments in the study. The graph below shows that only Treatments 1 and 2 are administered in the study. This is odd, since not a single participant got treatments 3 or 4.
+The analysis done in the next few pages looks at the efficacy of a three drug regimen vs a two drug regimen administered to HIV infected patients with the goal of finding a set of explanatory variables, including the three drug vs two drug variable, that can best model survival among patients. 
+
+The reason behind this analysis is to try and find whether the treatment being administered is a key factor in delaying the onset of AIDS and/or death in patients already infected with HIV.
+
+The goal of the statistical analysis performed is to prove the hypothesis that the three drug regimen administered to patients reduces the hazard of developing AIDS or dying at a given point of time, compared to the hazard of the two drug regimen. We can see through the model developed that indeed, the three drug treatment works better and reduces the hazard of contracting AIDS or dying.
+
+
+## Exploratory Data Analysis
+
+After uploading the data, the first visualization I created was to see how many individuals are part of each treatment group out of the 4 we have outlined. This is interesting to get a sense of the variety of treatments in the study. The graph below shows that only treatments 1 and 2 are administered in the study. This is odd, since not a single participant got treatments 3 or 4.
 
 ```{r}
+
+#barplot to see treatment distribution
+
 tbl <- with(AIDSdata, table(txgrp))
-barplot(tbl)
+barplot(tbl,main="Treatment Distribution", 
+   xlab="Treatment")
 ```
 
-
-
-The next visualization I made was to plot the CD4 stratum at screening against the event indicator for AIDS defining diagnosis or death (censor variable). This was to get a sense of whether CD4 stratum levels in any way had a strong correlation with the censor variable.
+It's also important to look at the distribution of the training set by race/ethnicity and sex in order to figure out whether the training sample is representative of a larger population. We can see that Asians and Females are disproportionatly underrepresented in the sample as compared to a general population, telling us that any conclusions about HIV progression in a global population should be made with caution based on this dataset. The bar plots below give us a good sense of these distributions.
 
 
 ```{r}
-ggplot(AIDSdata, aes(x=jitter(strat2), y=jitter(censor))) + geom_point()
+#barplot by ethnicity
+
+tbl <- with(AIDSdata, table(raceth))
+barplot(tbl,names.arg=c("White Non Hispanic","Black Non Hispanic","Hispanic","Asian/Pac Islander","Other"),main="Number of individuals by Race/Ethnicity", 
+   xlab="Race/Ethnicity")
+
 ```
 
 
-I made a few other visualizations but didn't really feel like they were useful enought to include. 
+```{r}
+#barplot by sex
+
+tbl <- with(AIDSdata, table(sex))
+barplot(tbl,names.arg=c("Male","Female"),main="Number of individuals by Sex", 
+   xlab="Sex")
+
+```
 
 
-Something new (Schoenfeld Residuals Test) :
 
-A key assumption in the Cox Proportional Hazard model is that of proportional hazards. If the proportional hazard assumption holds, we can easily estimate the effect of different covariates without any consideration of the hazard function. The Schoenfeld Residuals represent the difference between observed and expected covariates given the risk set at that time. Plotting Schoenfeld Residuals against time can tell us whether or not the proportional hazards assumption has been violated. I will look at Schoenfeld Residuals as part of the something new aspect of the project. 
+```{r}
 
-The resources I will look at to understand more about this topic are:
-
-1. https://stats.idre.ucla.edu/r/examples/asa/r-applied-survival-analysis-ch-6/
-
-The link above has some Schoenfeld Residual tests in R. I will look at this to understand how the coding bit works.
+plot_ly(AIDSdata, x = ~age, y = ~time,text = ~paste("karnof: ", karnof),color = ~censor
+       )
 
 
-2. http://192.248.16.117:8080/research/bitstream/70130/329/1/456-1844-1-PB%5b1%5d.pdf
-
-The paper above is good for understanding the underlying theory behind Schoenfeld Residuals. It's also an applied paper, so it will be easier to understand.
+```
 
 
-As I come across more resources I will add to this list.
+The scatterplot below is an interesting one. This shows us that regardless of treatment, the time to AIDS or death seems, at first sight to be similar. Therefore, simply going off of this plot, we would think that treatment doesn't affect the time variable. However, greater exploration is required to develop this hypothesis.
 
 
+```{r}
+
+
+
+#scatterplot of treatment against time
+
+plot_ly(AIDSdata, x = ~jitter(tx), y = ~time,text = ~paste("karnof: ", karnof),color = ~censor
+       )
+
+```
+
+
+\newpage
+
+## Building the Coxph Model :
+
+
+To find the best model, I ran the model with most of the relevant variables in the dataset. The variables id, time.d, censor.d and txgrp were not included in this analysis, since they were either irrelevant or were highly correlated with other variables in the dataset. I also observed that the variables priorzdv and ivdrug did not independently affect the response variable time, but together, these variables, which describe Months of prior ZDV use and IV drug use history had a statistically significant effect on the time variable.
+
+
+
+```{r}
+
+coxph(Surv(time,censor)~hemophil + strat2 + tx + sex + raceth + cd4 + age + karnof + priorzdv*ivdrug , data=AIDSdata)
+
+```
+
+
+
+Looking at this model, it doesn't seem like the variables hemophil, strat2, sex, raceth are statistically significant based off of the p values. In order to drop these variables conclusively, we perform a likelihood ratio test. Before doing that, we drop the variables that do not seem statistically significant.   
+
+
+
+```{r}
+
+coxph(Surv(time,censor)~ tx + cd4 + age + karnof + priorzdv*ivdrug , data=AIDSdata)
+
+```
+
+
+
+The next step is to actually perform the likelihood ratio test. 
+
+
+
+```{r}
+
+coxph(Surv(time,censor)~hemophil + strat2 + tx + sex + raceth + cd4 + age + karnof + priorzdv*ivdrug , data=AIDSdata)$loglik
+
+coxph(Surv(time,censor)~ tx + cd4 + age + karnof + priorzdv*ivdrug , data=AIDSdata)$loglik
+
+G = 2*(coxph(Surv(time,censor)~hemophil + strat2 + tx + sex + raceth + cd4 + age + karnof + priorzdv*ivdrug , data=AIDSdata)$loglik[2] -
+coxph(Surv(time,censor)~ tx + cd4 + age + karnof + priorzdv*ivdrug , data=AIDSdata)$loglik[2])
+
+
+1 - pchisq(G,4)
+
+```
+
+
+
+Because the Chi square test is not significant, we don't reject the null hypothesis. Therefore, we can drop the variables hemophil, strat2, sex, raceth from our model.
+
+
+We can also hypothesize that the variable age is not statistically significant in our model. In order to do this, we run the nested model without the variable age.
+
+
+```{r}
+
+coxph(Surv(time,censor)~ tx + cd4 + karnof + priorzdv*ivdrug , data=AIDSdata)
+
+```
+
+
+Again, the goal is to perform a likelihood ratio test to see if the variable age can be conclusively dropped.  
+
+
+```{r}
+
+
+coxph(Surv(time,censor)~ tx + cd4 + age + karnof + priorzdv*ivdrug , data=AIDSdata)$loglik
+
+coxph(Surv(time,censor)~ tx + cd4 + karnof + priorzdv*ivdrug , data=AIDSdata)$loglik
+
+G = 2*(coxph(Surv(time,censor)~ tx + cd4 + age + karnof + priorzdv*ivdrug , data=AIDSdata)$loglik[2] -
+coxph(Surv(time,censor)~ tx + cd4 + karnof + priorzdv*ivdrug , data=AIDSdata)$loglik[2])
+
+
+1 - pchisq(G,1)
+
+```
+
+
+The likelihood ratio test has only 1 degree of freedom now, and we can conclude that the model with tx, cd4, karnof, priorzdv*ivdrug is the final model. 
+
+The p-value for tx is 0.005, which means the treatment variable is significant. It has a hazard ratio of 0.48, which implies that there is a strong relationship between the treatment and the patient's decreased risk of developing AIDS or dying. This means that holding all other covariates constant, getting the three drug treatment reduces the hazard by 52%.
+
+The p-value for cd4 is very small and the hazard ratio is 0.98. This means that there is a mild relationship between cd4 levels and patient's decreased risk of develpoing AIDS or dying. This is similar to the case of the variable karnof, where the hazard rate is 0.94, which means that an increased Karnofsky Performance level reduces the hazard of AIDS or death, holding all other covariates constant. 
+
+What is interesting to note is the interaction variable we have between previous ivdrug use and months of prior ZDV use. While this variable is statistically significant, there doesn't seem to be much of an effect of its increase on the increase in hazard. 
+
+We can conclude that indeed the treatment is the most important variable in estimating the hazard of a particular individual at a particular time, with other explanatory variables in our model having marginal effects. While this model conclusively tells us that treatment has a great effect, we should be skeptical in applying the model to a larger population since the demographic of the data set we're working with is male dominated and has very few individuals that identify as Asian. This means that a large part of our population (ie. women, Asians) is not being proportionally represented in training this model.
+
+
+\newpage
+
+
+## Schoenfeld Residuals :
+
+
+Important Note : The image corresponding to Schoenfeld Residuals does not compile to the html document, so it has been uploaded as a separate image. I will fix this error ASAP
+
+
+A key assumption in the Cox Proportional Hazard model is that of proportional hazards. If the proportional hazard assumption holds, we can easily estimate the effect of different covariates without any consideration of the hazard function. The Schoenfeld Residuals represent the difference between observed and expected covariates given the risk set at that time. Plotting Schoenfeld Residuals against time can tell us whether or not the proportional hazards assumption has been violated. 
+
+For each covariate, there is a separate residual for each individual. It's interesting to note that Schoenfeld residuals are not defined for censored individuals and the sum of Schoenfeld residuals for covariates = 0. 
+
+We can define a set $D(t_k)$ of $d_k$ failures at a time $t_k$. We can thus calculate the Schoenfeld Residual for any  subject $i \in D(t_k)$ as the difference between the covariate for that subject and the weighted average of covariates in the risk set, 
+
+$$ x_i - \bar{x}(\beta, t_k)$$
+
+In principle, Schoenfeld Residuals are independent of time. A plot that shows a non random pattern against time is evidence of violation of the proportional hazards assumption.
+
+
+https://www.ics.uci.edu/~dgillen/STAT255/Handouts/lecture10.pdf
+
+In order to begin testing for proportional hazards on our dataset, we can run a test as below.
+
+
+```{r}
+
+cox.zph(coxph(Surv(time, censor)~ tx + cd4 + karnof + priorzdv*ivdrug, data=AIDSdata))
+
+```
+
+From the output above, the test doesn't seem statistically significant for any of the covariates and the global test is also not statistically significant. This leads us to assume proportional hazards. In order to validate this claim, we can plot Schoenfeld Residuals against time and see if we find a trend.
+
+
+```{r}
+
+ggcoxzph(cox.zph(coxph(Surv(time, censor)~ tx + cd4 + karnof + priorzdv*ivdrug, data=AIDSdata)))
+
+```
+
+
+Looking at Schoenfeld Residuals, we can see that the dashed lines represent a standard error bound around the fit of the solid line, which is a smooth spline fit to the plot. By looking at the plots above, we can conclude that the assumption of proportional hazards is supported for covariates tx, karnof, cd4 and priorzdv*ivdrug.
 
 
 
